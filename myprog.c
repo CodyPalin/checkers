@@ -48,8 +48,9 @@ int LowOnTime(void)
     float total;
 
     current = times(&bff);
-    total = (float) ((float)current-(float)start)/CLK_TCK;
-    if(total >= (SecPerMove-1.0)) return 1; else return 0;
+    total = (float) ((float)current-(float)start);
+    //fprintf(stderr, "time elapsed:%f",total);
+    if(total >= (SecPerMove-0.1)) return 1; else return 0;
 }
 
 /* Copy a square state */
@@ -260,17 +261,23 @@ int FindLegalMoves(struct State *state)
 }
 int MinVal(struct State *state, double alpha, double beta, int depth)
 {
+    if(LowOnTime())
+    {
+        fprintf(stderr,"interrupting...\n");
+        return -__INT_MAX__;
+    }
+        
     int x;
     depth --;
     if(depth <=0)
     {
         double rval = evalBoard(state->board);
-        fprintf(stderr, "In MinVal, depth = 0, evaluation = %f\n", rval);
+        //fprintf(stderr, "In MinVal, depth = 0, evaluation = %f\n", rval);
         return rval;
     }
-    fprintf(stderr, "In MinVal, depth = %i, alpha = %f, beta = %f\n", depth, alpha, beta);
+    //fprintf(stderr, "In MinVal, depth = %i, alpha = %f, beta = %f\n", depth, alpha, beta);
     FindLegalMoves(state);
-    fprintf(stderr,"number of legal moves: %d\n",state->numLegalMoves);
+    //fprintf(stderr,"number of legal moves: %d\n",state->numLegalMoves);
     for(x=0;x<state->numLegalMoves;x++)
     {
         struct State foobar;
@@ -280,6 +287,8 @@ int MinVal(struct State *state, double alpha, double beta, int depth)
         else foobar.player = 1;
         PerformMove(foobar.board, foobar.movelist[x], MoveLength(foobar.movelist[x]));
         rval = MaxVal(&foobar, alpha, beta, depth);
+        if(rval == -__INT_MAX__)
+            return -__INT_MAX__;
         if(rval < beta)
         {
             beta = rval;
@@ -290,17 +299,22 @@ int MinVal(struct State *state, double alpha, double beta, int depth)
 }
 int MaxVal(struct State *state, double alpha, double beta, int depth)
 {
+    if(LowOnTime())
+        {
+            fprintf(stderr,"interrupting...\n");
+            return -__INT_MAX__;
+        }
     int x;
     depth --;
     if(depth <=0)
     {
         double rval = evalBoard(state->board);
-        fprintf(stderr, "In MinVal, depth = %i, alpha = %f, beta = %f\n", depth, alpha, beta);
+        //fprintf(stderr, "In MinVal, depth = %i, alpha = %f, beta = %f\n", depth, alpha, beta);
         return rval;
     }
-    fprintf(stderr, "In MaxVal, depth = %i\n", depth);
+    //fprintf(stderr, "In MaxVal, depth = %i\n", depth);
     FindLegalMoves(state);
-    fprintf(stderr,"number of legal moves: %d\n",(*state).numLegalMoves);
+    //fprintf(stderr,"number of legal moves: %d\n",(*state).numLegalMoves);
     for(x=0;x<state->numLegalMoves;x++)
     {
         struct State foobar;
@@ -310,6 +324,8 @@ int MaxVal(struct State *state, double alpha, double beta, int depth)
         else foobar.player = 1;
         PerformMove(foobar.board, foobar.movelist[x], MoveLength(foobar.movelist[x]));
         rval = MinVal(&foobar, alpha, beta, depth);
+        if(rval == -__INT_MAX__)
+            return -__INT_MAX__;
         if(rval > alpha)
         {
             alpha = rval;
@@ -334,21 +350,22 @@ void FindBestMove(int player)
 
     /* Find the legal moves for the current state */
     FindLegalMoves(&state);
-    fprintf(stderr,"number of legal moves: %d\n",state.numLegalMoves);
+    //fprintf(stderr,"number of legal moves: %d\n",state.numLegalMoves);
 
 
     chosenMove = rand()%state.numLegalMoves;
-    //int depth = 0;
-    //while(!LowOnTime() && depth < MaxDepth)
-    //{
-    double alpha = -10000;
-    double beta = -alpha;
-    double bestScore = alpha;
-        //depth++;
+    int depth = 0;
+    while(depth < MaxDepth)
+    {
+        int bestdepthmove = chosenMove;
+        double alpha = -10000;
+        double beta = -alpha;
+        double bestScore = alpha;
+        depth++;
         int ExploredMove;
         for(ExploredMove=0;ExploredMove<state.numLegalMoves; ExploredMove++)
         {
-            fprintf(stderr, "exploring move: %d\n", ExploredMove);
+            //fprintf(stderr, "exploring move: %d\n", ExploredMove);
             struct State foobar;
             //double rval;
             memcpy(&foobar, &state, sizeof(foobar));
@@ -359,19 +376,24 @@ void FindBestMove(int player)
             PerformMove(foobar.board, foobar.movelist[ExploredMove], MoveLength(foobar.movelist[ExploredMove]));
             //fprintf(stderr, "move performed\n");
             //PrintBoard(&foobar);
-            int val = MinVal(&foobar, alpha, beta, MaxDepth);
+            int val = MinVal(&foobar, alpha, beta, depth);
+            if(val == -__INT_MAX__)
+            {
+                fprintf(stderr, "interrupting search at depth: %d\n",depth);
+                goto MakeMove;
+            }
             if(val > bestScore)
             {
                 bestScore = val;
-                chosenMove = ExploredMove;
+                bestdepthmove = ExploredMove;
             }
         }
-        fprintf(stderr, "found best move at depth %d with value of%f\n", MaxDepth, bestScore);
-    //}
-    // For now, until you write your search routine, we will just set the best move
-    // to be a random (legal) one, so that it plays a legal game of checkers.
-    // You *will* want to replace this with a more intelligent move seleciton
-    
+        chosenMove = bestdepthmove;
+        char text[16];
+        MoveToText(state.movelist[chosenMove],text);
+        fprintf(stderr, "found best move (%s) at depth %d with value of%f\n",text, depth, bestScore);
+    }
+    MakeMove:
     memcpy(bestmove,state.movelist[chosenMove],MoveLength(state.movelist[chosenMove]));
     //fprintf(stderr, "eval: %f , me: %d \n", evalBoard(state->board), me);
 }
@@ -516,9 +538,9 @@ void MoveToText(char move[12], char *mtext)
 /* Performs a move on the board, updating the state of the board */
 void PerformMove(char board[8][8], char move[12], int mlen)
 {
-    char text[16];
-    MoveToText(move,text);
-    fprintf(stderr, "performing move: %s\n",text);
+    //char text[16];
+    //MoveToText(move,text);
+    //fprintf(stderr, "performing move: %s\n",text);
     int i,j,x,y,x1,y1,x2,y2;
 
     NumberToXY(move[0],&x,&y);
@@ -551,7 +573,7 @@ int old_main(int argc, char *argv[])
     teststate.player = 1;
     memcpy(teststate.board,testboard,64*sizeof(char));
     PrintBoard(&teststate);
-    fprintf(stderr,"evaluation of test board: %f",evalBoard(testboard));
+    fprintf(stderr,"evaluation of test board: %f\n",evalBoard(testboard));
     return 0;
 }
 int main(int argc, char *argv[])
@@ -561,8 +583,9 @@ int main(int argc, char *argv[])
 
     /* Convert command line parameters */
     SecPerMove = (float) atof(argv[1]); /* Time allotted for each move */
+    fprintf(stderr, "secpermove: %f\n", SecPerMove);
     //MaxDepth = (argc == 4) ? atoi(argv[3]) : -1;
-    MaxDepth = 5;
+    MaxDepth = 20;
 
 fprintf(stderr, "%s SecPerMove == %lg\n", argv[0], SecPerMove);
 
