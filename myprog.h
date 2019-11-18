@@ -49,8 +49,8 @@ int FindKingJump(int player, char board[8][8], char move[12], int len, int x, in
 int FindJump(int player, char board[8][8], char move[12], int len, int x, int y);
 int FindLegalMoves(struct State *state);
 double evalBoard(char board[8][8]);
-int MaxVal(struct State *state, double alpha, double beta, int depth);
-int MinVal(struct State *state, double alpha, double beta, int depth);
+double MaxVal(struct State *state, double alpha, double beta, int depth);
+double MinVal(struct State *state, double alpha, double beta, int depth);
 void FindBestMove(int player);
 void NumberToXY(char num, int *x, int *y);
 int MoveLength(char move[12]);

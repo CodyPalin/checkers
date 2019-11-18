@@ -14,9 +14,12 @@
 float SecPerMove;
 char board[8][8];
 char bestmove[12];
+//char prevmove[12];
+//char prevmove2[12];
 int me,cutoff,endgame;
 long NumNodes;
 int MaxDepth;
+int numMoves;
 
 /*** For timing ***/
 clock_t start;
@@ -48,9 +51,15 @@ int LowOnTime(void)
     float total;
 
     current = times(&bff);
-    total = (float) ((float)current-(float)start);
+    total = (float) ((float)current-(float)start)*10000/CLK_TCK;
     //fprintf(stderr, "time elapsed:%f",total);
-    if(total >= (SecPerMove-0.1)) return 1; else return 0;
+    //fprintf(stderr, "time remaining:%f\n",total);
+    if(total >= (SecPerMove-0.1))
+    {
+        //fprintf(stderr, "time remaining:%f\n",total-(SecPerMove));
+        return 1; 
+    }
+    else return 0;
 }
 
 /* Copy a square state */
@@ -259,11 +268,11 @@ int FindLegalMoves(struct State *state)
     }
     return (jumpptr+numLegalMoves);
 }
-int MinVal(struct State *state, double alpha, double beta, int depth)
+double MinVal(struct State *state, double alpha, double beta, int depth)
 {
     if(LowOnTime())
     {
-        fprintf(stderr,"interrupting...\n");
+        //fprintf(stderr,"interrupting...\n");
         return -__INT_MAX__;
     }
         
@@ -297,11 +306,11 @@ int MinVal(struct State *state, double alpha, double beta, int depth)
     }
     return beta;
 }
-int MaxVal(struct State *state, double alpha, double beta, int depth)
+double MaxVal(struct State *state, double alpha, double beta, int depth)
 {
     if(LowOnTime())
         {
-            fprintf(stderr,"interrupting...\n");
+            //fprintf(stderr,"interrupting...\n");
             return -__INT_MAX__;
         }
     int x;
@@ -341,23 +350,33 @@ void FindBestMove(int player)
 {
     int chosenMove; 
     struct State state; 
-
+    numMoves++;
     /* Set up the current state */
     state.player = player;
     memcpy(state.board,board,64*sizeof(char));
     memset(bestmove,0,12*sizeof(char));
 
+    //PrintBoard(&state);
 
     /* Find the legal moves for the current state */
     FindLegalMoves(&state);
     //fprintf(stderr,"number of legal moves: %d\n",state.numLegalMoves);
 
+    //char prevtext[16];
+    //MoveToText(prevmove,prevtext);
+    //fprintf(stderr, "prevmove: (%s)\n",prevtext);
+    //char prevtext2[16];
+    //MoveToText(prevmove2,prevtext2);
+    //fprintf(stderr, "prevmove2: (%s)\n",prevtext2);
 
     chosenMove = rand()%state.numLegalMoves;
     int depth = 0;
     while(depth < MaxDepth)
     {
-        int bestdepthmove = chosenMove;
+        int bestmoves[48];
+        int numbest = 1;
+        bestmoves[0] = chosenMove;
+        //int bestdepthmove = chosenMove;
         double alpha = -10000;
         double beta = -alpha;
         double bestScore = alpha;
@@ -376,25 +395,41 @@ void FindBestMove(int player)
             PerformMove(foobar.board, foobar.movelist[ExploredMove], MoveLength(foobar.movelist[ExploredMove]));
             //fprintf(stderr, "move performed\n");
             //PrintBoard(&foobar);
-            int val = MinVal(&foobar, alpha, beta, depth);
+            double val = MinVal(&foobar, alpha, beta, depth);
+            //char exploredtext[16];
+            //MoveToText(state.movelist[ExploredMove],exploredtext);
+            //if(strcmp(exploredtext,prevtext2) ==0)
+            //    val -=20000;
             if(val == -__INT_MAX__)
             {
-                fprintf(stderr, "interrupting search at depth: %d\n",depth);
+                //fprintf(stderr, "interrupting search at depth: %d\n",depth);
                 goto MakeMove;
             }
             if(val > bestScore)
             {
                 bestScore = val;
-                bestdepthmove = ExploredMove;
+                numbest = 0;
+                bestmoves[numbest] = ExploredMove;
+                numbest++;
+
+            }
+            else if(val == bestScore)
+            {
+                bestmoves[numbest] = ExploredMove;
+                numbest++;
             }
         }
+        //fprintf(stderr, "num best moves:%d\n", numbest);
+        int bestdepthmove = bestmoves[rand()%numbest];
         chosenMove = bestdepthmove;
         char text[16];
         MoveToText(state.movelist[chosenMove],text);
-        fprintf(stderr, "found best move (%s) at depth %d with value of%f\n",text, depth, bestScore);
+        //fprintf(stderr, "found best move (%s) at depth %d with value of%f\n",text, depth, bestScore);
     }
     MakeMove:
     memcpy(bestmove,state.movelist[chosenMove],MoveLength(state.movelist[chosenMove]));
+    //memcpy(prevmove2,prevmove,MoveLength(prevmove));
+    //memcpy(prevmove,bestmove,MoveLength(bestmove));
     //fprintf(stderr, "eval: %f , me: %d \n", evalBoard(state->board), me);
 }
 /*
@@ -407,12 +442,53 @@ void FindBestMove(int player)
 [6][1]	[6][3]	[6][5]	[6][7]	
 [7][0]	[7][2]	[7][4]	[7][6]
 */
-
 double evalBoard(char board[8][8])
+{
+    size_t itr = 1;
+    char* testptr = (&board[0][0]);
+    double whitesum=0.1;
+    double redsum=0.1;
+    //fprintf(stderr,"printing board from: %p , to: %p\n", testptr, (&testboard[0][0]+(64*sizeof(char))));
+    while(testptr+itr <= (&board[0][0])+(64*sizeof(char)))
+    {
+        //fprintf(stderr, "%p\t", testptr+itr);
+        //fprintf(stderr, "itr:%zx\n", itr);
+        if(king(*(testptr+itr)))
+        {
+            if(*(testptr+itr) & White) whitesum+=2.0;
+            else redsum+=2.0;
+        }
+        else if(piece(*(testptr+itr)))
+        {
+            if(*(testptr+itr) & White) whitesum+=1.0;
+            else redsum+=1.0;
+        }
+        if((itr)/8 < (itr+2)/8)
+        {
+            if(itr%2 == 1)
+                itr+=1*sizeof(char);
+            else
+                itr+=3*sizeof(char);
+        }
+        else
+        {
+            itr+=2*sizeof(char);
+        }
+        
+    }
+    double eval;
+    if(me==2) 
+        eval = (whitesum-redsum)+(whitesum/redsum-1);
+    else 
+        eval = (redsum-whitesum)-(whitesum/redsum-1);
+    //fprintf(stderr, "eval: %f\n", eval);
+    return eval;
+}
+/*double old_evalBoard(char board[8][8])
 {   
     int y,x;
-    double whitesum=0.0;
-    double redsum=0.0;
+    double whitesum=0.1;
+    double redsum=0.1;
 
     for(y=0; y<8; y++) {
         for(x=0; x<8; x++) if(x%2 != y%2)
@@ -435,36 +511,46 @@ double evalBoard(char board[8][8])
     //PrintBoard(currBoard);
     double eval;
     if(me==2) 
-        eval = whitesum-redsum;
+        eval = whitesum/redsum;
     else 
-        eval = redsum-whitesum;
+        eval = redsum/whitesum;
     //fprintf(stderr, "eval: %f\n", eval);
     return eval;
-}
+}*/
 void PrintBoard(struct State *currBoard)
 {
-    int y,x;
-    for(y=0; y<8; y++)
+    size_t itr = 1;
+    char testboard[8][8];
+    memcpy(testboard,currBoard->board,64*sizeof(char));
+    char* testptr = (&testboard[0][0]);
+    //fprintf(stderr,"printing board from: %p , to: %p\n", testptr, (&testboard[0][0]+(64*sizeof(char))));
+    while(testptr+itr <= (&testboard[0][0])+(64*sizeof(char)))
     {
-        for(x=0; x<8; x++)
+        //fprintf(stderr, "%p\t", testptr+itr);
+        //fprintf(stderr, "itr:%zx\n", itr);
+        if(king(*(testptr+itr)))
         {
-             if(x%2 != y%2)
-             {
-                 if(king(currBoard->board[y][x]))
-                 {
-                     if(currBoard->board[y][x] & White) fprintf(stderr,"B");
-                     else fprintf(stderr,"A");
-                 }
-                 else if(piece(currBoard->board[y][x]))
-                 {
-                     if(currBoard->board[y][x] & White) fprintf(stderr,"b");
-                     else fprintf(stderr,"a");
-                 }
-                 else fprintf(stderr," ");
-             }
-             else fprintf(stderr," ");
+            if(*(testptr+itr) & White) fprintf(stderr,"B");
+            else fprintf(stderr,"A");
         }
-        fprintf(stderr,"\n");
+        else if(piece(*(testptr+itr)))
+        {
+            if(*(testptr+itr) & White) fprintf(stderr,"b");
+            else fprintf(stderr,"a");
+        }
+        else fprintf(stderr," ");
+        if((itr)/8 < (itr+2)/8)
+        {
+            if(itr%2 == 1)
+                itr+=1*sizeof(char);
+            else
+                itr+=3*sizeof(char);
+            fprintf(stderr,"\n");
+        }
+        else
+        {
+            itr+=2*sizeof(char);
+        }
     }
 }
 /* Converts a square label to it's x,y position */
@@ -573,7 +659,7 @@ int old_main(int argc, char *argv[])
     teststate.player = 1;
     memcpy(teststate.board,testboard,64*sizeof(char));
     PrintBoard(&teststate);
-    fprintf(stderr,"evaluation of test board: %f\n",evalBoard(testboard));
+    //fprintf(stderr,"evaluation of test board: %f\n",evalBoard(testboard));
     return 0;
 }
 int main(int argc, char *argv[])
@@ -584,6 +670,7 @@ int main(int argc, char *argv[])
     /* Convert command line parameters */
     SecPerMove = (float) atof(argv[1]); /* Time allotted for each move */
     fprintf(stderr, "secpermove: %f\n", SecPerMove);
+    numMoves= 0;
     //MaxDepth = (argc == 4) ? atoi(argv[3]) : -1;
     MaxDepth = 20;
 
